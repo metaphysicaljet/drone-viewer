@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, useAnimations, useGLTF } from '@react-three/drei';
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import '@react-three/fiber';
 /** @jsxImportSource react */
@@ -37,10 +37,25 @@ function findAnimationName(names: string[], candidates: string[], requiredKeywor
 function DroneModel() {
   const modelUrl = '/drone.glb';
   const group = useRef<any>(null);
+  const [animationMode, setAnimationMode] = useState<AnimationMode>(() => getAnimationModeFromQuery());
   
   const gltf = useGLTF(modelUrl);
   const { actions, names } = useAnimations(gltf.animations, group);
-  const animationMode = useMemo(() => getAnimationModeFromQuery(), []);
+
+  // Listen for URL changes and update animation mode
+  useEffect(() => {
+    const handlePopState = () => setAnimationMode(getAnimationModeFromQuery());
+    window.addEventListener('popstate', handlePopState);
+    
+    // Also check for hash/query changes via polling
+    const checkQuery = () => setAnimationMode(getAnimationModeFromQuery());
+    const interval = setInterval(checkQuery, 500);
+    
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Enable shadows on all meshes
   useEffect(() => {
