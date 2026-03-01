@@ -98,6 +98,15 @@ function DroneModel() {
   );
 
   useEffect(() => {
+    console.log('[DroneViewer] Animation metadata:', {
+      mode: animationMode,
+      availableAnimations: names,
+      stepByStepName,
+      explodedViewName,
+    });
+  }, [animationMode, names, stepByStepName, explodedViewName]);
+
+  useEffect(() => {
     if (!actions) return;
 
     // Stop all animations first
@@ -109,6 +118,12 @@ function DroneModel() {
         : animationMode === 'step_by_step'
           ? stepByStepName ?? explodedViewName
           : stepByStepName ?? explodedViewName;
+
+    console.log('[DroneViewer] Playing animation:', {
+      selectedAnimationName,
+      mode: animationMode,
+      available: Object.keys(actions || {}),
+    });
 
     if (selectedAnimationName && actions[selectedAnimationName]) {
       actions[selectedAnimationName].reset().play();
