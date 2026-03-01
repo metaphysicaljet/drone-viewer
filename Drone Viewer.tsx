@@ -1,9 +1,12 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, useAnimations, useGLTF } from '@react-three/drei';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import '@react-three/fiber';
 /** @jsxImportSource react */
+
+// Preload GLB file for performance
+useGLTF.preload('/drone.glb');
 
 type AnimationMode = 'step_by_step' | 'exploded_view' | 'auto';
 
@@ -34,28 +37,12 @@ function findAnimationName(names: string[], candidates: string[], requiredKeywor
   );
 }
 
-function DroneModel() {
+function DroneModel({ animationMode }: { animationMode: AnimationMode }) {
   const modelUrl = '/drone.glb';
   const group = useRef<any>(null);
-  const [animationMode, setAnimationMode] = useState<AnimationMode>(() => getAnimationModeFromQuery());
   
   const gltf = useGLTF(modelUrl);
   const { actions, names } = useAnimations(gltf.animations, group);
-
-  // Listen for URL changes and update animation mode
-  useEffect(() => {
-    const handlePopState = () => setAnimationMode(getAnimationModeFromQuery());
-    window.addEventListener('popstate', handlePopState);
-    
-    // Also check for hash/query changes via polling
-    const checkQuery = () => setAnimationMode(getAnimationModeFromQuery());
-    const interval = setInterval(checkQuery, 500);
-    
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      clearInterval(interval);
-    };
-  }, []);
 
   // Enable shadows on all meshes
   useEffect(() => {
@@ -113,15 +100,6 @@ function DroneModel() {
   );
 
   useEffect(() => {
-    console.log('[DroneViewer] Animation metadata:', {
-      mode: animationMode,
-      availableAnimations: names,
-      stepByStepName,
-      explodedViewName,
-    });
-  }, [animationMode, names, stepByStepName, explodedViewName]);
-
-  useEffect(() => {
     if (!actions) return;
 
     // Stop all animations first
@@ -133,12 +111,6 @@ function DroneModel() {
         : animationMode === 'step_by_step'
           ? stepByStepName ?? explodedViewName
           : stepByStepName ?? explodedViewName;
-
-    console.log('[DroneViewer] Playing animation:', {
-      selectedAnimationName,
-      mode: animationMode,
-      available: Object.keys(actions || {}),
-    });
 
     if (selectedAnimationName && actions[selectedAnimationName]) {
       actions[selectedAnimationName].reset().play();
@@ -153,32 +125,38 @@ function DroneModel() {
 
   return (
     <>
-      {!gltf.scene && (
-        <mesh>
-          <boxGeometry args={[2, 2, 2]} />
-          <meshStandardMaterial color="#cccccc" />
-        </mesh>
-      )}
       {gltf.scene && <primitive ref={group} object={gltf.scene} />}
     </>
   );
 }
 
-function Loader() {
-  return (
-    <mesh>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="#cccccc" />
-    </mesh>
-  );
-}
-
 export default function DroneViewer() {
+  const [animationMode, setAnimationMode] = useState<AnimationMode | null>(null);
+
+  useEffect(() => {
+    const syncModeFromQuery = () => setAnimationMode(getAnimationModeFromQuery());
+    syncModeFromQuery();
+
+    const handlePopState = () => syncModeFromQuery();
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  const resolvedMode: AnimationMode = animationMode ?? 'step_by_step';
+  const cameraConfig =
+    resolvedMode === 'exploded_view'
+      ? { position: [0, 1.8, 4.0] as [number, number, number], target: [0, 0, 0] as [number, number, number] }
+      : { position: [0, 0.8, 2.2] as [number, number, number], target: [0, 0.6, 0] as [number, number, number] };
+
   return (
     <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }} data-name="Drone Viewer">
       <Canvas
+        key={resolvedMode}
         camera={{
-          position: [0, 2, 5],
+          position: cameraConfig.position,
           fov: 50,
           near: 0.1,
           far: 1000,
@@ -188,28 +166,27 @@ export default function DroneViewer() {
       >
         <color attach="background" args={['#e9eef2']} />
         
-        <Suspense fallback={<Loader />}>
-          <DroneModel />
-          <OrbitControls 
-            enableZoom 
-            enablePan 
-            enableRotate 
-            minDistance={0.1}
-            maxDistance={1000}
-          />
-          
-          {/* Minimal lighting for instructional clarity */}
-          <ambientLight intensity={2} />
-          <directionalLight 
-            position={[5, 5, 5]} 
-            intensity={3} 
-            castShadow 
-            shadow-mapSize-width={2048}
-            shadow-mapSize-height={2048}
-          />
-          <directionalLight position={[-3, 2, -2]} intensity={2} />
-          <directionalLight position={[0, 5, 0]} intensity={1.5} />
-        </Suspense>
+        <DroneModel animationMode={resolvedMode} />
+        <OrbitControls 
+          enableZoom 
+          enablePan 
+          enableRotate 
+          target={cameraConfig.target}
+          minDistance={0.1}
+          maxDistance={1000}
+        />
+        
+        {/* Minimal lighting for instructional clarity */}
+        <ambientLight intensity={2} />
+        <directionalLight 
+          position={[5, 5, 5]} 
+          intensity={3} 
+          castShadow 
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+        />
+        <directionalLight position={[-3, 2, -2]} intensity={2} />
+        <directionalLight position={[0, 5, 0]} intensity={1.5} />
       </Canvas>
     </div>
   );
