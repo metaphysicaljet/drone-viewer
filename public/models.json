@@ -1,0 +1,68 @@
+{
+  "drone": {
+    "name": "Drone Assembly",
+    "modelPath": "/drone.glb",
+    "background": "#fafafb",
+    "defaultAnimation": "step_by_step",
+    "animations": {
+      "step_by_step": {
+        "camera": {
+          "position": [0, 0.8, 2.2],
+          "target": [0, 0.6, 0]
+        }
+      },
+      "exploded_view": {
+        "camera": {
+          "position": [0, 1.8, 4.0],
+          "target": [0, 0, 0]
+        }
+      }
+    },
+    "lighting": {
+      "ambient": 2,
+      "directional": [
+        { "position": [5, 5, 5], "intensity": 3, "castShadow": true },
+        { "position": [-3, 2, -2], "intensity": 2 },
+        { "position": [0, 5, 0], "intensity": 1.5 }
+      ]
+    },
+    "camera": {
+      "fov": 50,
+      "near": 0.1,
+      "far": 1000
+    }
+  },
+  "_example_car": {
+    "name": "Car Assembly",
+    "modelPath": "/car.glb",
+    "background": "#ffffff",
+    "defaultAnimation": "assembly",
+    "animations": {
+      "assembly": {
+        "camera": {
+          "position": [0, 1.2, 3.5],
+          "target": [0, 0.5, 0]
+        }
+      },
+      "exploded": {
+        "camera": {
+          "position": [0, 2.0, 5.0],
+          "target": [0, 0, 0]
+        }
+      }
+    },
+    "lighting": {
+      "ambient": 2.5,
+      "directional": [
+        { "position": [5, 5, 5], "intensity": 3, "castShadow": true },
+        { "position": [-3, 2, -2], "intensity": 2 },
+        { "position": [0, 5, 0], "intensity": 1.5 }
+      ]
+    },
+    "camera": {
+      "fov": 50,
+      "near": 0.1,
+      "far": 1000
+    }
+  }
+}
