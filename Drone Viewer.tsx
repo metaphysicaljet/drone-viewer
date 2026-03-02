@@ -128,12 +128,21 @@ function findAnimationName(names: string[], candidates: string[], requiredKeywor
   );
 }
 
-// Component that auto-adjusts camera to frame the model
+// Component that auto-adjusts camera to frame the model (runs once per model)
 function CameraController({ bounds, isCustomModel, target }: { bounds: { box: THREE.Box3; center: THREE.Vector3 } | null; isCustomModel: boolean; target: [number, number, number] }) {
   const { camera } = useThree();
+  const hasFramedRef = useRef<string | null>(null);
   
   useEffect(() => {
     if (!bounds || !camera || !isCustomModel) return;
+    
+    // Use bounds center as unique identifier - only frame once per unique model
+    const boundsId = `${bounds.center.x},${bounds.center.y},${bounds.center.z}`;
+    if (hasFramedRef.current === boundsId) {
+      return; // Already framed this model
+    }
+    
+    hasFramedRef.current = boundsId;
     
     const box = bounds.box;
     const size = box.getSize(new THREE.Vector3());
@@ -142,7 +151,6 @@ function CameraController({ bounds, isCustomModel, target }: { bounds: { box: TH
     
     // Calculate distance needed to frame the entire model
     const vFOV = THREE.MathUtils.degToRad(fov);
-    const height = 2 * Math.tan(vFOV / 2) * (maxDim / (2 * Math.tan(vFOV / 2)));
     const distance = (maxDim / 2) / Math.tan(vFOV / 2);
     
     // Position camera away from center at an angle
@@ -158,11 +166,7 @@ function CameraController({ bounds, isCustomModel, target }: { bounds: { box: TH
     camera.lookAt(bounds.center.x, bounds.center.y, bounds.center.z);
     camera.updateProjectionMatrix();
     
-    console.log(`📷 Auto-framed camera for model:`, {
-      modelSize: { x: size.x, y: size.y, z: size.z },
-      cameraDistance: distance,
-      cameraPos: { x: newPos.x, y: newPos.y, z: newPos.z }
-    });
+    console.log(`📷 Auto-framed camera for model`);
   }, [bounds, isCustomModel, camera]);
   
   return null;
@@ -306,6 +310,7 @@ export default function DroneViewer() {
     setLoading(true);
     setError(null);
     setModelBounds(null); // Reset bounds for new model
+    // This will cause CameraController to reframe when new bounds are computed
     const loadConfig = async () => {
       let config: ModelConfig | null = null;
 
