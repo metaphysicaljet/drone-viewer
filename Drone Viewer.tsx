@@ -164,7 +164,7 @@ export default function DroneViewer() {
         style={{ width: '100%', height: '100%' }}
         shadows
       >
-        <color attach="background" args={['#e9eef2']} />
+        <color attach="background" args={['#fafafb']} />
         
         <DroneModel animationMode={resolvedMode} />
         <OrbitControls 
