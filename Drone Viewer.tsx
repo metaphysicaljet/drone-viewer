@@ -1,4 +1,4 @@
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, useAnimations, useGLTF } from '@react-three/drei';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -128,11 +128,82 @@ function findAnimationName(names: string[], candidates: string[], requiredKeywor
   );
 }
 
-function DroneModel({ animationMode, config }: { animationMode: AnimationMode; config: ModelConfig }) {
+// Component that auto-adjusts camera to frame the model
+function CameraController({ bounds, isCustomModel, target }: { bounds: { box: THREE.Box3; center: THREE.Vector3 } | null; isCustomModel: boolean; target: [number, number, number] }) {
+  const { camera } = useThree();
+  
+  useEffect(() => {
+    if (!bounds || !camera || !isCustomModel) return;
+    
+    const box = bounds.box;
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = (camera as THREE.PerspectiveCamera).fov || 50;
+    
+    // Calculate distance needed to frame the entire model
+    const vFOV = THREE.MathUtils.degToRad(fov);
+    const height = 2 * Math.tan(vFOV / 2) * (maxDim / (2 * Math.tan(vFOV / 2)));
+    const distance = (maxDim / 2) / Math.tan(vFOV / 2);
+    
+    // Position camera away from center at an angle
+    const angle = Math.PI / 4; // 45 degrees
+    const newPos = new THREE.Vector3(
+      Math.sin(angle) * distance * 0.8,
+      maxDim * 0.4,
+      Math.cos(angle) * distance * 0.8
+    );
+    newPos.add(bounds.center);
+    
+    camera.position.copy(newPos);
+    camera.lookAt(bounds.center.x, bounds.center.y, bounds.center.z);
+    camera.updateProjectionMatrix();
+    
+    console.log(`📷 Auto-framed camera for model:`, {
+      modelSize: { x: size.x, y: size.y, z: size.z },
+      cameraDistance: distance,
+      cameraPos: { x: newPos.x, y: newPos.y, z: newPos.z }
+    });
+  }, [bounds, isCustomModel, camera]);
+  
+  return null;
+}
+
+function DroneModel({ animationMode, config, onBoundsComputed }: { animationMode: AnimationMode; config: ModelConfig; onBoundsComputed?: (bounds: THREE.Box3, center: THREE.Vector3) => void }) {
   const group = useRef<any>(null);
   
   const gltf = useGLTF(config.modelPath);
   const { actions, names } = useAnimations(gltf.animations, group);
+
+  // Log model diagnostics and compute bounds
+  useEffect(() => {
+    if (!gltf.scene) return;
+    
+    let meshCount = 0;
+    const box = new THREE.Box3();
+    
+    gltf.scene.traverse((child: any) => {
+      if (child.isMesh) {
+        meshCount++;
+        if (child.geometry) {
+          child.geometry.computeBoundingBox?.();
+          if (child.geometry.boundingBox) {
+            box.expandByObject(child);
+          }
+        }
+      }
+    });
+    
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    
+    console.log(`📦 Model loaded: ${meshCount} meshes`);
+    console.log(`📏 Bounds:`, { min: box.min, max: box.max, center, size: { x: size.x, y: size.y, z: size.z } });
+    console.log(`🎬 Animations available:`, names);
+    
+    if (onBoundsComputed) {
+      onBoundsComputed(box, center);
+    }
+  }, [gltf.scene, names, onBoundsComputed]);
 
   // Enable shadows on all meshes
   useEffect(() => {
@@ -225,6 +296,7 @@ export default function DroneViewer() {
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [modelBounds, setModelBounds] = useState<{ box: THREE.Box3; center: THREE.Vector3 } | null>(null);
 
   const modelKey = getModelFromQuery();
   const customGlbUrl = getCustomGlbUrl();
@@ -233,6 +305,7 @@ export default function DroneViewer() {
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setModelBounds(null); // Reset bounds for new model
     const loadConfig = async () => {
       let config: ModelConfig | null = null;
 
@@ -323,7 +396,15 @@ export default function DroneViewer() {
 
   // Allow background override via query parameter
   const bgColor = new URLSearchParams(window.location.search).get('background') || modelConfig.background;
-
+  
+  // Auto-focus camera for custom models by default
+  const autoFocus = customGlbUrl ? true : new URLSearchParams(window.location.search).get('autoFocus') === 'true';
+  
+  // Compute orbit controls target based on whether we're auto-focusing
+  let orbitTarget = cameraConfig.target as [number, number, number];
+  if (autoFocus && modelBounds) {
+    orbitTarget = [modelBounds.center.x, modelBounds.center.y, modelBounds.center.z];
+  }
   return (
     <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }} data-name="Model Viewer">
       <Canvas
@@ -339,14 +420,24 @@ export default function DroneViewer() {
       >
         <color attach="background" args={[bgColor]} />
         
-        <DroneModel animationMode={resolvedMode} config={modelConfig} />
+        <DroneModel 
+          animationMode={resolvedMode} 
+          config={modelConfig} 
+          onBoundsComputed={(box, center) => {
+            setModelBounds({ box, center });
+          }}
+        />
+        
+        <CameraController bounds={modelBounds} isCustomModel={autoFocus} target={orbitTarget} />
+        
         <OrbitControls 
           enableZoom 
           enablePan 
           enableRotate 
-          target={cameraConfig.target}
+          target={orbitTarget}
           minDistance={0.1}
           maxDistance={1000}
+          autoRotate={false}
         />
         
         {/* Dynamic lighting from config */}
