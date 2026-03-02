@@ -45,7 +45,18 @@ function getModelFromQuery(): string {
 function getCustomGlbUrl(): string | null {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
-  return params.get('glbUrl') || params.get('modelUrl') || null;
+  let url = params.get('glbUrl') || params.get('modelUrl') || null;
+  
+  // If URL was appended twice (e.g., both parameter name and value encoded), try to extract it
+  if (url && url.includes('glbUrl=')) {
+    url = url.split('glbUrl=')[1] || url;
+  }
+  
+  if (url) {
+    console.log(`🔍 Custom GLB URL from params:`, url);
+  }
+  
+  return url;
 }
 
 function createConfigFromGlbUrl(glbUrl: string): ModelConfig {
