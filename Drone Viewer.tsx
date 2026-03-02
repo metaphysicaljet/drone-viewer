@@ -213,6 +213,7 @@ export default function DroneViewer() {
   const [animationMode, setAnimationMode] = useState<AnimationMode | null>(null);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const modelKey = getModelFromQuery();
   const customGlbUrl = getCustomGlbUrl();
@@ -220,12 +221,27 @@ export default function DroneViewer() {
   // Load model config on mount and when model changes
   useEffect(() => {
     setLoading(true);
+    setError(null);
     const loadConfig = async () => {
       let config: ModelConfig | null = null;
 
       // Priority 1: Custom GLB URL from query parameter
       if (customGlbUrl) {
-        config = createConfigFromGlbUrl(customGlbUrl);
+        try {
+          // Validate URL is accessible before creating config
+          const headResponse = await fetch(customGlbUrl, { method: 'HEAD' });
+          if (!headResponse.ok) {
+            throw new Error(`HTTP ${headResponse.status}: ${headResponse.statusText}`);
+          }
+          config = createConfigFromGlbUrl(customGlbUrl);
+          console.log(`✓ Custom GLB URL loaded: ${customGlbUrl}`);
+        } catch (error) {
+          const errorMsg = `Failed to load GLB from URL: ${error instanceof Error ? error.message : String(error)}`;
+          console.error(`✗ ${errorMsg}`);
+          setError(errorMsg);
+          setLoading(false);
+          return;
+        }
       } else {
         // Priority 2: Named model from models.json
         config = await loadModelConfig(modelKey);
@@ -233,9 +249,14 @@ export default function DroneViewer() {
 
       if (config) {
         setModelConfig(config);
-        useGLTF.preload(config.modelPath);
+        // Only preload if it's a local path
+        if (config.modelPath.startsWith('/')) {
+          useGLTF.preload(config.modelPath);
+        }
       } else {
-        console.error(`Model config not found for "${modelKey}"`);
+        const errorMsg = `Model config not found for "${modelKey}"`;
+        console.error(`✗ ${errorMsg}`);
+        setError(errorMsg);
       }
       setLoading(false);
     };
@@ -255,10 +276,27 @@ export default function DroneViewer() {
     };
   }, []);
 
-  if (loading || !modelConfig) {
+  if (loading) {
     return (
       <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafafb' }}>
         <div style={{ fontSize: '18px', color: '#666' }}>Loading 3D model...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafafb', flexDirection: 'column' }}>
+        <div style={{ fontSize: '20px', color: '#d32f2f', fontWeight: 'bold', marginBottom: '10px' }}>Error Loading Model</div>
+        <div style={{ fontSize: '14px', color: '#666', maxWidth: '500px', textAlign: 'center', whiteSpace: 'pre-wrap' }}>{error}</div>
+      </div>
+    );
+  }
+
+  if (!modelConfig) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafafb' }}>
+        <div style={{ fontSize: '18px', color: '#666' }}>No model configuration found</div>
       </div>
     );
   }
