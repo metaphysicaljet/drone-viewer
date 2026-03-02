@@ -1,6 +1,6 @@
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, useAnimations, useGLTF } from '@react-three/drei';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import '@react-three/fiber';
 /** @jsxImportSource react */
@@ -129,7 +129,7 @@ function findAnimationName(names: string[], candidates: string[], requiredKeywor
 }
 
 // Component that auto-adjusts camera to frame the model (runs once per model)
-function CameraController({ bounds, isCustomModel, target }: { bounds: { box: THREE.Box3; center: THREE.Vector3 } | null; isCustomModel: boolean; target: [number, number, number] }) {
+function CameraController({ bounds, isCustomModel }: { bounds: { box: THREE.Box3; center: THREE.Vector3 } | null; isCustomModel: boolean }) {
   const { camera } = useThree();
   const hasFramedRef = useRef<string | null>(null);
   
@@ -163,13 +163,34 @@ function CameraController({ bounds, isCustomModel, target }: { bounds: { box: TH
     newPos.add(bounds.center);
     
     camera.position.copy(newPos);
-    camera.lookAt(bounds.center.x, bounds.center.y, bounds.center.z);
     camera.updateProjectionMatrix();
     
     console.log(`📷 Auto-framed camera for model`);
   }, [bounds, isCustomModel, camera]);
   
   return null;
+}
+
+function Controls({ target }: { target: [number, number, number] }) {
+  const controlsRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!controlsRef.current) return;
+    controlsRef.current.target.set(target[0], target[1], target[2]);
+    controlsRef.current.update();
+  }, [target]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enableZoom
+      enablePan
+      enableRotate
+      minDistance={0.1}
+      maxDistance={1000}
+      autoRotate={false}
+    />
+  );
 }
 
 function DroneModel({ animationMode, config, onBoundsComputed }: { animationMode: AnimationMode; config: ModelConfig; onBoundsComputed?: (bounds: THREE.Box3, center: THREE.Vector3) => void }) {
@@ -301,6 +322,7 @@ export default function DroneViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modelBounds, setModelBounds] = useState<{ box: THREE.Box3; center: THREE.Vector3 } | null>(null);
+  const [controlsTarget, setControlsTarget] = useState<[number, number, number]>([0, 0, 0]);
 
   const modelKey = getModelFromQuery();
   const customGlbUrl = getCustomGlbUrl();
@@ -399,21 +421,40 @@ export default function DroneViewer() {
     target: [0, 0.6, 0] as [number, number, number]
   };
 
+  const handleBoundsComputed = useCallback((box: THREE.Box3, center: THREE.Vector3) => {
+    setModelBounds((prev) => {
+      if (
+        prev &&
+        prev.center.distanceToSquared(center) < 0.000001 &&
+        prev.box.min.equals(box.min) &&
+        prev.box.max.equals(box.max)
+      ) {
+        return prev;
+      }
+      return { box: box.clone(), center: center.clone() };
+    });
+  }, []);
+
   // Allow background override via query parameter
   const bgColor = new URLSearchParams(window.location.search).get('background') || modelConfig.background;
   
   // Auto-focus camera for custom models by default
   const autoFocus = customGlbUrl ? true : new URLSearchParams(window.location.search).get('autoFocus') === 'true';
-  
-  // Compute orbit controls target based on whether we're auto-focusing
-  let orbitTarget = cameraConfig.target as [number, number, number];
-  if (autoFocus && modelBounds) {
-    orbitTarget = [modelBounds.center.x, modelBounds.center.y, modelBounds.center.z];
-  }
+
+  // Initialize controls target from config when a new model is loaded (not on animation mode changes)
+  useEffect(() => {
+    setControlsTarget(cameraConfig.target);
+  }, [modelConfig?.modelPath]);
+
+  // Update controls target once when auto-focus computes model bounds
+  useEffect(() => {
+    if (!autoFocus || !modelBounds) return;
+    setControlsTarget([modelBounds.center.x, modelBounds.center.y, modelBounds.center.z]);
+  }, [autoFocus, modelBounds]);
+
   return (
     <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }} data-name="Model Viewer">
       <Canvas
-        key={resolvedMode}
         camera={{
           position: cameraConfig.position,
           fov: modelConfig.camera.fov,
@@ -428,22 +469,11 @@ export default function DroneViewer() {
         <DroneModel 
           animationMode={resolvedMode} 
           config={modelConfig} 
-          onBoundsComputed={(box, center) => {
-            setModelBounds({ box, center });
-          }}
+          onBoundsComputed={handleBoundsComputed}
         />
         
-        <CameraController bounds={modelBounds} isCustomModel={autoFocus} target={orbitTarget} />
-        
-        <OrbitControls 
-          enableZoom 
-          enablePan 
-          enableRotate 
-          target={orbitTarget}
-          minDistance={0.1}
-          maxDistance={1000}
-          autoRotate={false}
-        />
+        <CameraController bounds={modelBounds} isCustomModel={autoFocus} />
+        <Controls target={controlsTarget} />
         
         {/* Dynamic lighting from config */}
         <ambientLight intensity={modelConfig.lighting.ambient} />
