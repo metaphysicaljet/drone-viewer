@@ -387,6 +387,41 @@ export default function DroneViewer() {
     };
   }, []);
 
+  const handleBoundsComputed = useCallback((box: THREE.Box3, center: THREE.Vector3) => {
+    setModelBounds((prev) => {
+      if (
+        prev &&
+        prev.center.distanceToSquared(center) < 0.000001 &&
+        prev.box.min.equals(box.min) &&
+        prev.box.max.equals(box.max)
+      ) {
+        return prev;
+      }
+      return { box: box.clone(), center: center.clone() };
+    });
+  }, []);
+
+  const resolvedMode: AnimationMode = animationMode ?? 'step_by_step';
+
+  const animationConfig = modelConfig?.animations[resolvedMode] || (modelConfig ? modelConfig.animations[modelConfig.defaultAnimation] : undefined);
+  const cameraConfig = animationConfig?.camera || {
+    position: [0, 0.8, 2.2] as [number, number, number],
+    target: [0, 0.6, 0] as [number, number, number]
+  };
+
+  const bgColor = new URLSearchParams(window.location.search).get('background') || modelConfig?.background || '#fafafb';
+  const autoFocus = customGlbUrl ? true : new URLSearchParams(window.location.search).get('autoFocus') === 'true';
+
+  useEffect(() => {
+    if (!modelConfig) return;
+    setControlsTarget(cameraConfig.target);
+  }, [modelConfig?.modelPath]);
+
+  useEffect(() => {
+    if (!autoFocus || !modelBounds) return;
+    setControlsTarget([modelBounds.center.x, modelBounds.center.y, modelBounds.center.z]);
+  }, [autoFocus, modelBounds]);
+
   if (loading) {
     return (
       <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafafb' }}>
@@ -411,46 +446,6 @@ export default function DroneViewer() {
       </div>
     );
   }
-
-  const resolvedMode: AnimationMode = animationMode ?? 'step_by_step';
-  
-  // Get camera preset from config, with fallback defaults
-  const animationConfig = modelConfig.animations[resolvedMode] || modelConfig.animations[modelConfig.defaultAnimation];
-  const cameraConfig = animationConfig?.camera || {
-    position: [0, 0.8, 2.2] as [number, number, number],
-    target: [0, 0.6, 0] as [number, number, number]
-  };
-
-  const handleBoundsComputed = useCallback((box: THREE.Box3, center: THREE.Vector3) => {
-    setModelBounds((prev) => {
-      if (
-        prev &&
-        prev.center.distanceToSquared(center) < 0.000001 &&
-        prev.box.min.equals(box.min) &&
-        prev.box.max.equals(box.max)
-      ) {
-        return prev;
-      }
-      return { box: box.clone(), center: center.clone() };
-    });
-  }, []);
-
-  // Allow background override via query parameter
-  const bgColor = new URLSearchParams(window.location.search).get('background') || modelConfig.background;
-  
-  // Auto-focus camera for custom models by default
-  const autoFocus = customGlbUrl ? true : new URLSearchParams(window.location.search).get('autoFocus') === 'true';
-
-  // Initialize controls target from config when a new model is loaded (not on animation mode changes)
-  useEffect(() => {
-    setControlsTarget(cameraConfig.target);
-  }, [modelConfig?.modelPath]);
-
-  // Update controls target once when auto-focus computes model bounds
-  useEffect(() => {
-    if (!autoFocus || !modelBounds) return;
-    setControlsTarget([modelBounds.center.x, modelBounds.center.y, modelBounds.center.z]);
-  }, [autoFocus, modelBounds]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }} data-name="Model Viewer">
