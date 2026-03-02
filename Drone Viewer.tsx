@@ -42,6 +42,54 @@ function getModelFromQuery(): string {
   return params.get('model') || 'drone';
 }
 
+function getCustomGlbUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('glbUrl') || params.get('modelUrl') || null;
+}
+
+function createConfigFromGlbUrl(glbUrl: string): ModelConfig {
+  return {
+    name: 'Custom Model',
+    modelPath: glbUrl,
+    background: new URLSearchParams(window.location.search).get('background') || '#fafafb',
+    defaultAnimation: 'auto',
+    animations: {
+      auto: {
+        camera: {
+          position: [0, 1.5, 3.5],
+          target: [0, 0.5, 0]
+        }
+      },
+      step_by_step: {
+        camera: {
+          position: [0, 0.8, 2.2],
+          target: [0, 0.6, 0]
+        }
+      },
+      exploded_view: {
+        camera: {
+          position: [0, 1.8, 4.0],
+          target: [0, 0, 0]
+        }
+      }
+    },
+    lighting: {
+      ambient: 2,
+      directional: [
+        { position: [5, 5, 5], intensity: 3, castShadow: true },
+        { position: [-3, 2, -2], intensity: 2 },
+        { position: [0, 5, 0], intensity: 1.5 }
+      ]
+    },
+    camera: {
+      fov: 50,
+      near: 0.1,
+      far: 1000
+    }
+  };
+}
+
 function getAnimationModeFromQuery(): AnimationMode {
   if (typeof window === 'undefined') return 'step_by_step';
 
@@ -167,12 +215,22 @@ export default function DroneViewer() {
   const [loading, setLoading] = useState(true);
 
   const modelKey = getModelFromQuery();
+  const customGlbUrl = getCustomGlbUrl();
 
   // Load model config on mount and when model changes
   useEffect(() => {
     setLoading(true);
     const loadConfig = async () => {
-      const config = await loadModelConfig(modelKey);
+      let config: ModelConfig | null = null;
+
+      // Priority 1: Custom GLB URL from query parameter
+      if (customGlbUrl) {
+        config = createConfigFromGlbUrl(customGlbUrl);
+      } else {
+        // Priority 2: Named model from models.json
+        config = await loadModelConfig(modelKey);
+      }
+
       if (config) {
         setModelConfig(config);
         useGLTF.preload(config.modelPath);
@@ -182,7 +240,7 @@ export default function DroneViewer() {
       setLoading(false);
     };
     loadConfig();
-  }, [modelKey]);
+  }, [modelKey, customGlbUrl]);
 
   // Sync animation mode from query parameters
   useEffect(() => {
