@@ -193,11 +193,16 @@ function Controls({ target }: { target: [number, number, number] }) {
   );
 }
 
-function DroneModel({ animationMode, config, onBoundsComputed }: { animationMode: AnimationMode; config: ModelConfig; onBoundsComputed?: (bounds: THREE.Box3, center: THREE.Vector3) => void }) {
+function DroneModel({ animationMode, config, onBoundsComputed, onModelReady }: { animationMode: AnimationMode; config: ModelConfig; onBoundsComputed?: (bounds: THREE.Box3, center: THREE.Vector3) => void; onModelReady?: () => void }) {
   const group = useRef<any>(null);
   
   const gltf = useGLTF(config.modelPath);
   const { actions, names } = useAnimations(gltf.animations, group);
+
+  useEffect(() => {
+    if (!gltf.scene) return;
+    onModelReady?.();
+  }, [gltf.scene, onModelReady]);
 
   // Log model diagnostics and compute bounds
   useEffect(() => {
@@ -323,6 +328,7 @@ export default function DroneViewer() {
   const [error, setError] = useState<string | null>(null);
   const [modelBounds, setModelBounds] = useState<{ box: THREE.Box3; center: THREE.Vector3 } | null>(null);
   const [controlsTarget, setControlsTarget] = useState<[number, number, number]>([0, 0, 0]);
+  const [modelReady, setModelReady] = useState(false);
 
   const modelKey = getModelFromQuery();
   const customGlbUrl = getCustomGlbUrl();
@@ -332,6 +338,7 @@ export default function DroneViewer() {
     setLoading(true);
     setError(null);
     setModelBounds(null); // Reset bounds for new model
+    setModelReady(false);
     // This will cause CameraController to reframe when new bounds are computed
     const loadConfig = async () => {
       let config: ModelConfig | null = null;
@@ -448,7 +455,7 @@ export default function DroneViewer() {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }} data-name="Model Viewer">
+    <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', position: 'relative' }} data-name="Model Viewer">
       <Canvas
         camera={{
           position: cameraConfig.position,
@@ -465,6 +472,7 @@ export default function DroneViewer() {
           animationMode={resolvedMode} 
           config={modelConfig} 
           onBoundsComputed={handleBoundsComputed}
+          onModelReady={() => setModelReady(true)}
         />
         
         <CameraController bounds={modelBounds} isCustomModel={autoFocus} />
@@ -483,6 +491,35 @@ export default function DroneViewer() {
           />
         ))}
       </Canvas>
+
+      {!modelReady && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: '#fafafb',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            zIndex: 20,
+          }}
+        >
+          <div
+            style={{
+              width: '28px',
+              height: '28px',
+              border: '3px solid #d8d8dc',
+              borderTop: '3px solid #666',
+              borderRadius: '50%',
+              animation: 'spin 0.9s linear infinite',
+            }}
+          />
+          <div style={{ fontSize: '15px', color: '#666' }}>Loading 3D model...</div>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
     </div>
   );
 }
