@@ -112,6 +112,15 @@ function getAnimationModeFromQuery(): AnimationMode {
   return 'step_by_step';
 }
 
+function shouldUseSceneCameraFromQuery(): boolean {
+  if (typeof window === 'undefined') return false;
+  const value = new URLSearchParams(window.location.search).get('useSceneCamera') ??
+    new URLSearchParams(window.location.search).get('sceneCamera') ??
+    '';
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
 function findAnimationName(names: string[], candidates: string[], requiredKeywords?: string[]) {
   const lower = (text: string) => text.toLowerCase();
 
@@ -193,7 +202,36 @@ function Controls({ target }: { target: [number, number, number] }) {
   );
 }
 
-function DroneModel({ animationMode, config, onBoundsComputed, onModelReady }: { animationMode: AnimationMode; config: ModelConfig; onBoundsComputed?: (bounds: THREE.Box3, center: THREE.Vector3) => void; onModelReady?: () => void }) {
+function SceneCameraBinder({ cameraObject, enabled }: { cameraObject: THREE.Camera | null; enabled: boolean }) {
+  const { camera, set, size } = useThree();
+  const previousCameraRef = useRef<THREE.Camera | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !cameraObject) return;
+
+    previousCameraRef.current = camera;
+    set({ camera: cameraObject as any });
+
+    return () => {
+      if (previousCameraRef.current) {
+        set({ camera: previousCameraRef.current as any });
+      }
+    };
+  }, [enabled, cameraObject, camera, set]);
+
+  useEffect(() => {
+    if (!enabled || !cameraObject) return;
+    const perspective = cameraObject as THREE.PerspectiveCamera;
+    if (perspective.isPerspectiveCamera) {
+      perspective.aspect = size.width / size.height;
+      perspective.updateProjectionMatrix();
+    }
+  }, [enabled, cameraObject, size.width, size.height]);
+
+  return null;
+}
+
+function DroneModel({ animationMode, config, onBoundsComputed, onModelReady, onSceneCameraDetected }: { animationMode: AnimationMode; config: ModelConfig; onBoundsComputed?: (bounds: THREE.Box3, center: THREE.Vector3) => void; onModelReady?: () => void; onSceneCameraDetected?: (camera: THREE.Camera | null) => void }) {
   const group = useRef<any>(null);
   
   const gltf = useGLTF(config.modelPath);
@@ -203,6 +241,15 @@ function DroneModel({ animationMode, config, onBoundsComputed, onModelReady }: {
     if (!gltf.scene) return;
     onModelReady?.();
   }, [gltf.scene, onModelReady]);
+
+  useEffect(() => {
+    if (!gltf.scene) return;
+    const sceneCamera = gltf.cameras?.[0] ?? null;
+    onSceneCameraDetected?.(sceneCamera);
+    if (sceneCamera) {
+      console.log('🎥 Embedded camera detected in GLB:', sceneCamera.name || '(unnamed camera)');
+    }
+  }, [gltf.scene, gltf.cameras, onSceneCameraDetected]);
 
   // Log model diagnostics and compute bounds
   useEffect(() => {
@@ -329,9 +376,12 @@ export default function DroneViewer() {
   const [modelBounds, setModelBounds] = useState<{ box: THREE.Box3; center: THREE.Vector3 } | null>(null);
   const [controlsTarget, setControlsTarget] = useState<[number, number, number]>([0, 0, 0]);
   const [modelReady, setModelReady] = useState(false);
+  const [sceneCamera, setSceneCamera] = useState<THREE.Camera | null>(null);
 
   const modelKey = getModelFromQuery();
   const customGlbUrl = getCustomGlbUrl();
+  const useSceneCamera = shouldUseSceneCameraFromQuery();
+  const sceneCameraActive = useSceneCamera && !!sceneCamera;
 
   // Load model config on mount and when model changes
   useEffect(() => {
@@ -339,6 +389,7 @@ export default function DroneViewer() {
     setError(null);
     setModelBounds(null); // Reset bounds for new model
     setModelReady(false);
+    setSceneCamera(null);
     // This will cause CameraController to reframe when new bounds are computed
     const loadConfig = async () => {
       let config: ModelConfig | null = null;
@@ -408,6 +459,13 @@ export default function DroneViewer() {
     });
   }, []);
 
+  const handleSceneCameraDetected = useCallback((camera: THREE.Camera | null) => {
+    setSceneCamera((prev) => {
+      if (prev === camera) return prev;
+      return camera;
+    });
+  }, []);
+
   const resolvedMode: AnimationMode = animationMode ?? 'step_by_step';
 
   const animationConfig = modelConfig?.animations[resolvedMode] || (modelConfig ? modelConfig.animations[modelConfig.defaultAnimation] : undefined);
@@ -473,10 +531,13 @@ export default function DroneViewer() {
           config={modelConfig} 
           onBoundsComputed={handleBoundsComputed}
           onModelReady={() => setModelReady(true)}
+          onSceneCameraDetected={handleSceneCameraDetected}
         />
+
+        <SceneCameraBinder cameraObject={sceneCamera} enabled={sceneCameraActive} />
         
-        <CameraController bounds={modelBounds} isCustomModel={autoFocus} />
-        <Controls target={controlsTarget} />
+        <CameraController bounds={modelBounds} isCustomModel={autoFocus && !sceneCameraActive} />
+        {!sceneCameraActive && <Controls target={controlsTarget} />}
         
         {/* Dynamic lighting from config */}
         <ambientLight intensity={modelConfig.lighting.ambient} />
