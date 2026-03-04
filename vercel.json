@@ -14,7 +14,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://figma.com https://*.figma.com https://figma.site https://*.figma.site"
+          "value": "frame-ancestors 'self' https://figma.com https://*.figma.com https://figma.site https://*.figma.site https://metaphysical-labs.com https://www.metaphysical-labs.com"
         }
       ]
     }
