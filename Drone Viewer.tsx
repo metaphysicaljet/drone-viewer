@@ -180,7 +180,7 @@ function CameraController({ bounds, isCustomModel }: { bounds: { box: THREE.Box3
   return null;
 }
 
-function Controls({ target }: { target: [number, number, number] }) {
+function Controls({ target, onUserInteractStart }: { target: [number, number, number]; onUserInteractStart?: () => void }) {
   const controlsRef = useRef<any>(null);
 
   useEffect(() => {
@@ -198,6 +198,7 @@ function Controls({ target }: { target: [number, number, number] }) {
       minDistance={0.1}
       maxDistance={1000}
       autoRotate={false}
+      onStart={onUserInteractStart}
     />
   );
 }
@@ -377,11 +378,12 @@ export default function DroneViewer() {
   const [controlsTarget, setControlsTarget] = useState<[number, number, number]>([0, 0, 0]);
   const [modelReady, setModelReady] = useState(false);
   const [sceneCamera, setSceneCamera] = useState<THREE.Camera | null>(null);
+  const [sceneCameraReleasedToControls, setSceneCameraReleasedToControls] = useState(false);
 
   const modelKey = getModelFromQuery();
   const customGlbUrl = getCustomGlbUrl();
   const useSceneCamera = shouldUseSceneCameraFromQuery();
-  const sceneCameraActive = useSceneCamera && !!sceneCamera;
+  const sceneCameraActive = useSceneCamera && !!sceneCamera && !sceneCameraReleasedToControls;
 
   // Load model config on mount and when model changes
   useEffect(() => {
@@ -390,6 +392,7 @@ export default function DroneViewer() {
     setModelBounds(null); // Reset bounds for new model
     setModelReady(false);
     setSceneCamera(null);
+    setSceneCameraReleasedToControls(false);
     // This will cause CameraController to reframe when new bounds are computed
     const loadConfig = async () => {
       let config: ModelConfig | null = null;
@@ -466,6 +469,12 @@ export default function DroneViewer() {
     });
   }, []);
 
+  const handleUserInteractStart = useCallback(() => {
+    if (sceneCameraActive) {
+      setSceneCameraReleasedToControls(true);
+    }
+  }, [sceneCameraActive]);
+
   const resolvedMode: AnimationMode = animationMode ?? 'step_by_step';
 
   const animationConfig = modelConfig?.animations[resolvedMode] || (modelConfig ? modelConfig.animations[modelConfig.defaultAnimation] : undefined);
@@ -537,7 +546,7 @@ export default function DroneViewer() {
         <SceneCameraBinder cameraObject={sceneCamera} enabled={sceneCameraActive} />
         
         <CameraController bounds={modelBounds} isCustomModel={autoFocus && !sceneCameraActive} />
-        {!sceneCameraActive && <Controls target={controlsTarget} />}
+        <Controls target={controlsTarget} onUserInteractStart={handleUserInteractStart} />
         
         {/* Dynamic lighting from config */}
         <ambientLight intensity={modelConfig.lighting.ambient} />
