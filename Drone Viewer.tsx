@@ -137,6 +137,38 @@ function findAnimationName(names: string[], candidates: string[], requiredKeywor
   );
 }
 
+function choosePreferredAnimatedCamera(cameras: THREE.Camera[], animations: THREE.AnimationClip[]): THREE.Camera | null {
+  if (!cameras || cameras.length === 0) return null;
+
+  const cameraTrackCounts = new Map<string, number>();
+
+  for (const clip of animations ?? []) {
+    for (const track of clip.tracks ?? []) {
+      const trackName = track.name ?? '';
+      const dotIndex = trackName.lastIndexOf('.');
+      if (dotIndex <= 0) continue;
+      const objectName = trackName.slice(0, dotIndex);
+      const property = trackName.slice(dotIndex + 1);
+      if (property === 'position' || property === 'quaternion' || property === 'rotation' || property === 'scale') {
+        cameraTrackCounts.set(objectName, (cameraTrackCounts.get(objectName) ?? 0) + 1);
+      }
+    }
+  }
+
+  let bestCamera: THREE.Camera | null = null;
+  let bestScore = -1;
+
+  for (const camera of cameras) {
+    const score = cameraTrackCounts.get(camera.name) ?? 0;
+    if (score > bestScore) {
+      bestScore = score;
+      bestCamera = camera;
+    }
+  }
+
+  return bestCamera ?? cameras[0];
+}
+
 // Component that auto-adjusts camera to frame the model (runs once per model)
 function CameraController({ bounds, isCustomModel }: { bounds: { box: THREE.Box3; center: THREE.Vector3 } | null; isCustomModel: boolean }) {
   const { camera } = useThree();
@@ -180,27 +212,49 @@ function CameraController({ bounds, isCustomModel }: { bounds: { box: THREE.Box3
   return null;
 }
 
-function Controls({ target, onUserInteractStart }: { target: [number, number, number]; onUserInteractStart?: () => void }) {
+function Controls({ target, enabled }: { target: [number, number, number]; enabled: boolean }) {
   const controlsRef = useRef<any>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     if (!controlsRef.current) return;
     controlsRef.current.target.set(target[0], target[1], target[2]);
     controlsRef.current.update();
-  }, [target]);
+  }, [target, enabled]);
 
   return (
     <OrbitControls
       ref={controlsRef}
+      enabled={enabled}
       enableZoom
       enablePan
       enableRotate
       minDistance={0.1}
       maxDistance={1000}
       autoRotate={false}
-      onStart={onUserInteractStart}
     />
   );
+}
+
+function SceneCameraHandoffListener({ enabled, onHandoff }: { enabled: boolean; onHandoff: () => void }) {
+  const { gl } = useThree();
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handlePointerDown = () => onHandoff();
+    const handleWheel = () => onHandoff();
+
+    gl.domElement.addEventListener('pointerdown', handlePointerDown, { passive: true });
+    gl.domElement.addEventListener('wheel', handleWheel, { passive: true });
+
+    return () => {
+      gl.domElement.removeEventListener('pointerdown', handlePointerDown);
+      gl.domElement.removeEventListener('wheel', handleWheel);
+    };
+  }, [enabled, gl, onHandoff]);
+
+  return null;
 }
 
 function SceneCameraBinder({ cameraObject, enabled }: { cameraObject: THREE.Camera | null; enabled: boolean }) {
@@ -245,12 +299,12 @@ function DroneModel({ animationMode, config, onBoundsComputed, onModelReady, onS
 
   useEffect(() => {
     if (!gltf.scene) return;
-    const sceneCamera = gltf.cameras?.[0] ?? null;
+    const sceneCamera = choosePreferredAnimatedCamera(gltf.cameras ?? [], gltf.animations ?? []);
     onSceneCameraDetected?.(sceneCamera);
     if (sceneCamera) {
-      console.log('🎥 Embedded camera detected in GLB:', sceneCamera.name || '(unnamed camera)');
+      console.log('🎥 Embedded camera selected for playback:', sceneCamera.name || '(unnamed camera)');
     }
-  }, [gltf.scene, gltf.cameras, onSceneCameraDetected]);
+  }, [gltf.scene, gltf.cameras, gltf.animations, onSceneCameraDetected]);
 
   // Log model diagnostics and compute bounds
   useEffect(() => {
@@ -469,7 +523,7 @@ export default function DroneViewer() {
     });
   }, []);
 
-  const handleUserInteractStart = useCallback(() => {
+  const handleSceneCameraHandoff = useCallback(() => {
     if (sceneCameraActive) {
       setSceneCameraReleasedToControls(true);
     }
@@ -544,9 +598,10 @@ export default function DroneViewer() {
         />
 
         <SceneCameraBinder cameraObject={sceneCamera} enabled={sceneCameraActive} />
+        <SceneCameraHandoffListener enabled={sceneCameraActive} onHandoff={handleSceneCameraHandoff} />
         
         <CameraController bounds={modelBounds} isCustomModel={autoFocus && !sceneCameraActive} />
-        <Controls target={controlsTarget} onUserInteractStart={handleUserInteractStart} />
+        <Controls target={controlsTarget} enabled={!sceneCameraActive} />
         
         {/* Dynamic lighting from config */}
         <ambientLight intensity={modelConfig.lighting.ambient} />
